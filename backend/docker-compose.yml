@@ -1,0 +1,22 @@
+services:
+  kolobok-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: kolobok-backend
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      KOLOBOK_DATABASE_PATH: /app/data/kolobok.sqlite3
+      KOLOBOK_HOST: 0.0.0.0
+      KOLOBOK_PORT: 8000
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - kolobok-data:/app/data
+    stop_grace_period: 20s
+
+volumes:
+  kolobok-data:

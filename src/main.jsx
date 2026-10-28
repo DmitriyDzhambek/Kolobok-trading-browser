@@ -1,0 +1,16 @@
+import React from "react";
+import { createRoot } from "react-dom/client";
+import App from "./App.jsx";
+import ErrorBoundary from "./components/ErrorBoundary.jsx";
+import { initTelegram } from "./services/telegramService.js";
+import "./styles.css";
+
+initTelegram();
+
+createRoot(document.getElementById("root")).render(
+  <React.StrictMode>
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
+  </React.StrictMode>
+);

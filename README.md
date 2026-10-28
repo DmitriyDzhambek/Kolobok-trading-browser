@@ -1,46 +1,49 @@
-# Kolobok Trading Browser
+# Колобок — трейдинг-браузер (Electron + Telegram Mini App)
 
-This repository contains the full source code of the Kolobok Trading Browser project, including the main application files and the packaged project archive added to the repository.
+Тёмный интерфейс в эстетике «Японская свеча»: React + Vite. Один и тот же код работает как десктоп (Electron) и как Telegram Mini App на Vercel. Реальный график — официальный виджет TradingView (OANDA:EURUSD), сигналы считаются по живым котировкам Binance, звуковое оповещение о входе в сделку синтезируется через Web Audio.
 
-## What was added to the project
+## Запуск веб-версии (Telegram Mini App)
+```bash
+npm install
+npm run dev        # http://127.0.0.1:5500
+```
+Данные берутся из serverless-функций `api/market.js` и `api/news.js`. Для их локального запуска нужен Vercel CLI: `npm i -g vercel && npm run vercel:dev`. Без API приложение не падает — котировки/новости просто помечаются недоступными.
 
-The project includes:
+## Деплой на Vercel
+1. Запушьте репозиторий в GitHub.
+2. В Vercel импортируйте проект: framework — Vite, build command `npm run build`, output `dist` (всё это уже в `vercel.json`).
+3. После деплоя откройте BotFather → `/newapp` (или «Set Menu Button») и укажите HTTPS-ссылку на Vercel.
+4. `initTelegram()` в `src/main.jsx` сам вызывает `ready()`, `expand()` и подхватывает тему Telegram.
 
-- Frontend application based on Vite and React
-- UI for trading charts and market visualization
-- Browser-based trading interface
-- Speech service integration
-- Telegram integration services
-- API layer for news and backend communication
-- Python backend for business logic and service processing
-- Docker configuration for backend deployment
-- Electron wrapper for desktop application support
+## Десктоп (Electron)
+```bash
+npm run dev:electron   # web + Electron c privileged IPC-мостом
+npm run dist           # сборка Windows-установщика
+```
+В Electron данные идут через IPC (`window.kolobok`), в вебе — через `/api`. Транспорт выбирается автоматически в `src/services/bridge.js`.
 
-## Included archive
+## Звук о входе в сделку
+`src/services/soundService.js` синтезирует тёплый колокольчик (Web Audio, без аудиофайлов): восходящая пентатоника для BUY, нисходящая для SELL. Громкость и вкл/выкл — в «Настройках», там же кнопка «Тест». На мобильных и в Telegram воспроизведение возможно только после первого касания — разблокировка встроена. Дополнительно дублируется хаптикой Telegram.
 
-The repository contains the packaged project archive:
+## Важные ограничения
+- Виджет TradingView — официальный публичный embed; полноценную страницу `tradingview.com/chart/` в iframe встроить нельзя (403).
+- Панель MOEX проверяет доступность ISS API, но не загружает расписание сессий и не утверждает, что торги открыты.
+- Сигналы EMA/RSI — не финансовая рекомендация; реальные ордера и ключи биржи не подключены.
 
-- `kolobok-trading-browser-backend-v4.zip`
+## Безопасность
+Serverless-функции проксируют строго фиксированные endpoint'ы (Binance EURUSDT, Google News RSS, MOEX ISS) и не позволяют запрашивать произвольные URL. В Electron включены `contextIsolation`, отключён `nodeIntegration`, sandbox включён.
 
-This archive includes the project structure under:
 
-- `kolobok-trading-browser-v3/kolobok/`
+## Фоновый ИИ-бэкенд 24/7
 
-Inside the archive is the complete application source code with the following main sections:
+Полный сервис добавлен в `backend/`: `worker.py` (WebSocket, M1-свечи, H1-тренд, паттерны, SQLite-память), `brain.py` (LLM-комментарии с кэшем и локальным fallback), `main.py` (FastAPI), `config.py`, Dockerfile и Compose. Фронтенд опрашивает `http://127.0.0.1:8000/api/status` каждые 5 секунд и показывает фоновый статус/отчёт о возвращении.
 
-- `src/` — frontend application code and UI
-- `api/` — API integrations and data access
-- `backend/` — Python backend, configuration, and deployment files
-- `electron/` — desktop application entry point
-- `README.md` — project documentation
+```bash
+cd backend
+cp .env.example .env
+# Впишите KOLOBOK_TWELVEDATA_API_KEY; LLM API key необязателен
+docker compose up --build -d
+docker compose logs -f
+```
 
-## Project architecture overview
-
-The application is organized as a multi-part project:
-
-- Frontend: React + Vite interface for market display and user interaction
-- API layer: communication with external data sources and services
-- Backend: Python logic for processing and integration
-- Desktop support: Electron wrapper for running the app as a desktop application
-
-This repository represents a GitHub snapshot of the project with the full source code, supporting configuration, and packaged project files included.
+Подробности, переменные окружения и API см. в [`backend/README.md`](backend/README.md). Для настоящих котировок EUR/USD нужен ключ провайдера Twelve Data. Без него сервис остаётся живым и не молчит, но честно сообщает, что live-данных нет. Forex tick-volume — только прокси по числу обновлений котировки, а не централизованный объём торгов. Сигналы информационные и не исполняют ордера.

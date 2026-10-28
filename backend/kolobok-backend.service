@@ -1,0 +1,22 @@
+[Unit]
+Description=Kolobok 24/7 EUR/USD market assistant API and worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/kolobok/backend
+EnvironmentFile=-/opt/kolobok/backend/.env
+ExecStart=/opt/kolobok/backend/.venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+TimeoutStopSec=25
+User=kolobok
+Group=kolobok
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/kolobok/backend/data
+
+[Install]
+WantedBy=multi-user.target

@@ -20,7 +20,8 @@
   "dependencies": {
     "lucide-react": "^0.468.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "react-markdown": "^10.1.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
@@ -34,8 +35,16 @@
   "build": {
     "appId": "ru.kolobok.tradingbrowser",
     "productName": "Колобок",
-    "files": ["dist/**/*", "electron/**/*", "package.json"],
-    "directories": { "buildResources": "build" },
-    "win": { "target": "nsis" }
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "buildResources": "build"
+    },
+    "win": {
+      "target": "nsis"
+    }
   }
 }

@@ -2,10 +2,11 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity, AudioLines, BarChart3, Bell, CalendarDays, CircleHelp,
   Clock3, Globe, LineChart, Mic, Minus, Plus, Search, Settings, ShieldCheck,
-  Smile, SquareArrowOutUpRight, TrendingDown, TrendingUp, Volume2, Waves, X
+  Smile, SquareArrowOutUpRight, TrendingDown, TrendingUp, Volume2, Waves, X, MessageSquare
 } from "lucide-react";
 import TradingViewChart from "./components/TradingViewChart.jsx";
 import SystemStatusPanel from "./components/SystemStatusPanel.jsx";
+import ContextChat from "./components/ContextChat.jsx";
 import { fetchMoexCalendar, getQuote, getCandles } from "./services/marketData.js";
 import { getSignal, rsi } from "./services/signalEngine.js";
 import { speakSignal, stopSpeech } from "./services/speechService.js";
@@ -54,6 +55,7 @@ export default function App() {
   const [backendStatus, setBackendStatus] = useState(null);
   const [backendConnected, setBackendConnected] = useState(false);
   const [awayReport, setAwayReport] = useState("");
+  const [chatOpen, setChatOpen] = useState(false);
   const webviewRef = useRef(null);
   const [webviewLoading, setWebviewLoading] = useState(false);
   const [webviewCanGoBack, setWebviewCanGoBack] = useState(false);
@@ -338,6 +340,7 @@ export default function App() {
                 <button className="gold-button" onClick={runSignal}><Activity size={15}/> Проверить сигнал</button>
                 <button className={`round-button ${listening ? "listening" : ""}`} onClick={toggleListening} title="Голосовая команда"><Mic size={17}/></button>
                 <button className="round-button" onClick={() => { stopSpeech(); setAssistantText("Голосовые уведомления остановлены."); }} title="Остановить голос"><Volume2 size={17}/></button>
+                <button className="round-button" onClick={() => setChatOpen(true)} title="Чат с Колобком"><MessageSquare size={17}/></button>
               </div>
             </div>
             <div className="kolobok-wrap"><div className="orbit orbit-one"/><div className="orbit orbit-two"/><div className="kolobok-face"><span className="eye left"/><span className="eye right"/><span className="cheek left"/><span className="cheek right"/><span className="smile"/></div></div>
@@ -423,6 +426,13 @@ export default function App() {
         </div>
       )}
       <footer className="statusbar"><span>Колобок <b>v1.0.0</b></span><span><span className="status-dot"/> {marketLive ? "График TradingView · сигналы по живым котировкам" : "График TradingView · демонстрационный режим"}</span></footer>
+
+      <ContextChat
+        isOpen={chatOpen}
+        onClose={() => setChatOpen(false)}
+        activeSymbol="EUR/USD"
+        activeTimeframe={timeframe}
+      />
     </div>
   );
 }

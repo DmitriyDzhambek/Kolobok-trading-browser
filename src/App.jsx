@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Activity, AudioLines, BarChart3, Bell, CalendarDays, ChevronDown, CircleHelp,
+  Activity, AudioLines, BarChart3, Bell, CalendarDays, CircleHelp,
   Clock3, Globe, LineChart, Mic, Minus, Plus, Search, Settings, ShieldCheck,
   Smile, SquareArrowOutUpRight, TrendingDown, TrendingUp, Volume2, Waves, X
 } from "lucide-react";
 import TradingViewChart from "./components/TradingViewChart.jsx";
+import SystemStatusPanel from "./components/SystemStatusPanel.jsx";
 import { fetchMoexCalendar, getQuote, getCandles } from "./services/marketData.js";
 import { getSignal, rsi } from "./services/signalEngine.js";
 import { speakSignal, stopSpeech } from "./services/speechService.js";
@@ -60,9 +61,7 @@ export default function App() {
 
   useEffect(() => {
     fetchMoexCalendar().then(setMoex).catch(() => setMoex({ ok: false, note: "Источник MOEX недоступен." }));
-    getNews()
-      .then(data => { if (data?.ok) setNews(data.items); })
-      .catch(() => setNews([]));
+    getNews().then(data => { if (data?.ok) setNews(data.items); }).catch(() => setNews([]));
     const timer = setInterval(() => setNow(new Date()), 1000);
     async function refreshQuote() {
       try {
@@ -78,8 +77,6 @@ export default function App() {
     return () => { clearInterval(timer); clearInterval(quoteTimer); };
   }, []);
 
-  // Persistent backend: poll every five seconds. The worker itself runs independently
-  // in Docker/server, so closing this UI does not stop market monitoring.
   useEffect(() => {
     let alive = true;
     let controller;
@@ -108,7 +105,6 @@ export default function App() {
     return () => { alive = false; clearInterval(timer); controller?.abort(); };
   }, []);
 
-  // Mobile WebViews (including Telegram) allow audio only after a user gesture.
   useEffect(() => {
     const unlock = () => unlockAudio();
     window.addEventListener("pointerdown", unlock, { once: true });
@@ -148,7 +144,7 @@ export default function App() {
       return;
     }
     const sideRu = result.side === "BUY" ? "ПОКУПКА" : "ПРОДАЖА";
-    setAssistantText(`Обнаружено условие: ${sideRu}. ${marketLive ? "Проверьте котировки и риски перед решением." : "Источник котировок недоступен — анализ может быть неточным."}`);
+    setAssistantText(`Обнаружено условие: ${sideRu}. ${marketLive ? "Проверьте котировки и риски перед решением." : "Источник данных недоступен — сигнал остаётся демонстрационным."}`);
     if (sound.enabled) playTradeSignal(result.side);
     if (voiceEnabled) speakSignal({ side: result.side, demo: !marketLive });
   }
@@ -247,7 +243,7 @@ export default function App() {
     if (result.side !== "NONE") {
       setSignal(result);
       const sideRu = result.side === "BUY" ? "ПОКУПКА" : "ПРОДАЖА";
-      setAssistantText(`Автоматическая проверка: ${sideRu}. ${marketLive ? "Проверьте график и риски." : "Источник недоступен — анализ может быть неточным."}`);
+      setAssistantText(`Автоматическая проверка: ${sideRu}. ${marketLive ? "Проверьте график и риски." : "Источник недоступен — анализ остаётся демонстрационным."}`);
       if (sound.enabled) playTradeSignal(result.side);
       if (voiceEnabled) speakSignal({ side: result.side, demo: !marketLive });
     }
@@ -303,7 +299,7 @@ export default function App() {
         <button type="button" className="bare-icon" title="Назад" onClick={webviewGoBack} disabled={!webviewCanGoBack}><span>←</span></button>
         <button type="button" className="bare-icon" title="Вперёд" onClick={webviewGoForward} disabled={!webviewCanGoForward}><span>→</span></button>
         <button type="button" className="bare-icon" title="Обновить" onClick={webviewReload}><Activity size={17}/></button>
-        <div className="address-input"><ShieldCheck size={15}/><input value={address} onChange={e => setAddress(e.target.value)} aria-label="Адрес сайта" placeholder="Введите адрес или поисковый запрос"/></div>
+        <div className="address-input"><ShieldCheck size={15}/><input value={address} onChange={e => setAddress(e.target.value)} aria-label="Адрес сайта" placeholder="Введите адрес" /></div>
         <button className="bare-icon" type="button" title="Открыть адрес / поиск" onClick={() => { const form = document.querySelector(".address-row"); form?.requestSubmit(); }}><Search size={17}/></button>
         <button className="bare-icon" type="button" title="Микрофон" onClick={toggleListening}><Mic size={17}/></button>
         <button className="bare-icon" type="button" title="Настройки" onClick={() => openNav("Настройки")}><Settings size={17}/></button>
@@ -316,7 +312,6 @@ export default function App() {
           <div className="sidebar-bottom"><span className="status-dot"/><span>Защищённый режим</span></div>
         </aside>
 
-        {/* Webview for browsing external sites */}
         {activeNav === "Браузер" && address && address !== "https://www.tradingview.com/chart/" && (
           <div className="webview-container">
             <webview ref={webviewRef} src="" className="embedded-webview" allowpopups="true" />
@@ -328,7 +323,7 @@ export default function App() {
           <section className="chart-panel panel">
             <div className="chart-toolbar">
               <div className="instrument"><Search size={19}/><strong>EUR/USD</strong><span className="separator"/><span className="muted">OANDA · реальные котировки TradingView</span></div>
-              <div className="chart-tools"><button className="tv-label" onClick={() => { setAddress("https://www.tradingview.com/chart/"); window.open("https://www.tradingview.com/chart/", "_blank", "noopener,noreferrer"); }}>TV <b>TradingView ↗</b></button></div>
+              <div className="chart-tools"><button className="tv-label" onClick={() => { setAddress("https://www.tradingview.com/chart/"); window.open("https://www.tradingview.com/chart/", "_blank"); }}>TradingView</button></div>
             </div>
             <TradingViewChart />
           </section>
@@ -337,34 +332,36 @@ export default function App() {
             <div className="assistant-copy">
               <div className="eyebrow">ВАШ СПОКОЙНЫЙ ПОМОЩНИК</div>
               <div className="speech-bubble">{backendStatus?.speech_bubble || assistantText}</div>
-              <div className={`backend-presence ${backendConnected ? "online" : "offline"}`}><i />{backendConnected ? `Фоновый Колобок · ${backendStatus?.source_status === "connected" ? "EUR/USD LIVE" : "ожидание потока"}` : "Фоновый сервис не подключён"}</div>
-              {awayReport && <div className="away-report"><strong>Пока тебя не было</strong><span>{awayReport}</span><button onClick={() => setAwayReport("")} aria-label="Скрыть отчёт">×</button></div>}
+              <div className={`backend-presence ${backendConnected ? "online" : "offline"}`}><i />{backendConnected ? `Фоновый Колобок · ${backendStatus?.source_status === "connected" ? "подключён" : "проверка"}` : "Колобок off-line"}</div>
+              {awayReport && <div className="away-report"><strong>Пока тебя не было</strong><span>{awayReport}</span><button onClick={() => setAwayReport("")} aria-label="Скрыть">×</button></div>}
               <div className="assistant-actions">
                 <button className="gold-button" onClick={runSignal}><Activity size={15}/> Проверить сигнал</button>
                 <button className={`round-button ${listening ? "listening" : ""}`} onClick={toggleListening} title="Голосовая команда"><Mic size={17}/></button>
-                <button className="round-button" onClick={() => { stopSpeech(); setAssistantText("Голосовые уведомления остановлены."); }} title="Остановить речь"><Volume2 size={17}/></button>
+                <button className="round-button" onClick={() => { stopSpeech(); setAssistantText("Голосовые уведомления остановлены."); }} title="Остановить голос"><Volume2 size={17}/></button>
               </div>
             </div>
-            <div className="kolobok-wrap"><div className="orbit orbit-one"/><div className="orbit orbit-two"/><div className="kolobok-face"><span className="eye left"/><span className="eye right"/><span className="cheek left"/><span className="cheek right"/><span className="smile"/></div><div className="glow-dot dot-one"/><div className="glow-dot dot-two"/></div>
+            <div className="kolobok-wrap"><div className="orbit orbit-one"/><div className="orbit orbit-two"/><div className="kolobok-face"><span className="eye left"/><span className="eye right"/><span className="cheek left"/><span className="cheek right"/><span className="smile"/></div></div>
             <div className={`signal-card ${signal.side === "SELL" ? "sell" : ""}`}>
               <div className="waveform">{Array.from({length: 25}, (_, i) => <i key={i} style={{height: `${8 + Math.abs(Math.sin(i * 0.8)) * (i % 4 === 0 ? 30 : 17)}px`}} />)}</div>
-              <div className="signal-result">{signal.side === "BUY" ? <TrendingUp size={24}/> : signal.side === "SELL" ? <TrendingDown size={24}/> : <Waves size={24}/>}<div><strong>{signal.side === "BUY" ? "ПОКУПКА" : signal.side === "SELL" ? "ПРОДАЖА" : "ОЖИДАНИЕ"}</strong><small>EUR/USD · {signal.side === "NONE" ? "нет подтверждения" : "потенциальный сигнал"}</small></div></div>
+              <div className="signal-result">{signal.side === "BUY" ? <TrendingUp size={24}/> : signal.side === "SELL" ? <TrendingDown size={24}/> : <Waves size={24}/>}<div><strong>{signal.side === "BUY" ? "BUY" : signal.side === "SELL" ? "SELL" : "WAIT"}</strong><small>{signal.reason || "Проверка сигнала"}</small></div></div>
               <button className={`voice-toggle ${voiceEnabled ? "enabled" : ""}`} onClick={() => setVoiceEnabled(v => !v)} title="Голосовые оповещения"><Mic size={19}/></button>
             </div>
           </section>
         </main>
 
         <aside className="right-column">
+          <SystemStatusPanel />
+
           <section className="quote-card panel">
-            <div className="card-heading"><div className="coin-icon">€</div><div><strong>EUR/USDT</strong><small>{quote ? "Публичные котировки Binance" : "Ожидание котировок"}</small></div><span className="badge-demo">{quote ? "LIVE" : "—"}</span></div>
+            <div className="card-heading"><div className="coin-icon">€</div><div><strong>EUR/USDT</strong><small>{quote ? "Публичные котировки Binance" : "Ожидание котировок"}</small></div><span className="badge-demo">DEMO</span></div>
             <div className="price">{quote ? quote.price.toFixed(5) : "—"} <span>{quote ? `${quote.changePercent >= 0 ? "+" : ""}${quote.changePercent.toFixed(2)}%` : quoteError || "загрузка"}</span></div>
             <div className="quote-stats"><div><small>High 24ч</small><b>{quote ? quote.high.toFixed(5) : "—"}</b></div><div><small>Low 24ч</small><b>{quote ? quote.low.toFixed(5) : "—"}</b></div><div><small>Vol</small><b>{quote ? quote.volume.toFixed(0) : "—"}</b></div></div>
           </section>
 
           <section className="moex-card panel">
             <div className="section-heading"><div className="moex-logo">MOEX</div><div><strong>Московская Биржа</strong><small>Проверка доступности расписания</small></div></div>
-            <div className="session-row"><div><strong>Валютный рынок</strong><small>Время по Москве · {clock}</small></div><span className="session-state"><i className="status-dot"/>{moex.ok ? "API доступен" : "Не подтверждено"}</span></div>
-            <div className="session-row"><div><strong>Срочный рынок</strong><small>Точное расписание не загружено</small></div><span className="session-state muted"><i className="status-dot gray"/>—</span></div>
+            <div className="session-row"><div><strong>Валютный рынок</strong><small>Время по Москве · {clock}</small></div><span className="session-state"><i className="status-dot"/> {moex.ok ? "Открыто" : "Пауза"}</span></div>
+            <div className="session-row"><div><strong>Срочный рынок</strong><small>Точное расписание не загружено</small></div><span className="session-state"><i className="status-dot gray"/> Демо</span></div>
             <p className="moex-note">{moex.note}</p>
             <a className="external-link" href="https://www.moex.com/ru/tradingcalendar" target="_blank" rel="noreferrer">Открыть календарь MOEX <SquareArrowOutUpRight size={13}/></a>
           </section>
@@ -372,8 +369,8 @@ export default function App() {
           <section className="activity-card panel">
             <div className="section-title"><span>Последние события</span><Bell size={15}/></div>
             <div className="activity-row"><span className="activity-icon"><Activity size={15}/></span><div><strong>Аналитика</strong><small>{signal.reason}</small></div></div>
-            <div className="activity-row"><span className="activity-icon"><AudioLines size={15}/></span><div><strong>Голосовой ассистент</strong><small>{voiceEnabled ? "Оповещения включены" : "Оповещения выключены"}</small></div></div>
-            <div className="activity-row"><span className="activity-icon"><Clock3 size={15}/></span><div><strong>Сессии MOEX</strong><small>Статус будет показан после получения достоверного расписания</small></div></div>
+            <div className="activity-row"><span className="activity-icon"><AudioLines size={15}/></span><div><strong>Голосовой ассистент</strong><small>{voiceEnabled ? "Оповещения активны" : "Оповещения отключены"}</small></div></div>
+            <div className="activity-row"><span className="activity-icon"><Clock3 size={15}/></span><div><strong>Сессии MOEX</strong><small>Статус будет показан после проверки в реальном времени.</small></div></div>
           </section>
 
           {news.length > 0 && (
@@ -398,38 +395,34 @@ export default function App() {
           </section>
         </aside>
       </div>
+
       {activeNav !== "Браузер" && activeNav !== "Настройки" && (
         <div className="page-overlay" onMouseDown={e => { if (e.target === e.currentTarget) setActiveNav("Браузер"); }}>
           <section className="page-dialog">
             <div className="page-dialog-head"><h2>{activeNav}</h2><button className="round-button" onClick={() => setActiveNav("Браузер")} aria-label="Закрыть"><X size={17}/></button></div>
-            {activeNav === "Торговля" && <><p>Рыночный обзор EUR/USDT. Здесь отображаются данные из подключённого источника; приложение не отправляет ордера и не хранит биржевые ключи.</p><div className="page-grid"><div className="page-tile"><strong>Последняя цена</strong><span>{quote ? quote.price.toFixed(5) : "Котировка недоступна"}</span></div><div className="page-tile"><strong>Изменение за 24 ч</strong><span>{quote ? `${quote.changePercent.toFixed(2)}%` : "Нет данных"}</span></div><div className="page-tile"><strong>Таймфрейм</strong><span>{timeframe}</span></div><div className="page-tile"><strong>Последний сигнал</strong><span>{signal.side === "NONE" ? "Ожидание" : signal.side === "BUY" ? "Покупка (потенциальный сигнал)" : "Продажа (потенциальный сигнал)"}</span></div></div><div className="dialog-actions"><button className="dialog-button" onClick={() => { setActiveNav("Браузер"); runSignal(); }}>Проверить сигнал</button><button className="dialog-button secondary" onClick={() => { setActiveNav("Браузер"); setTimeframe("1h"); }}>Показать график 1h</button></div></>}
-            {activeNav === "Аналитика" && <><p>{signal.reason}. EMA 9/21 используется как простое пересечение, RSI 14 — как фильтр импульса. Это не прогноз и не гарантия результата.</p><div className="page-grid"><div className="page-tile"><strong>EMA 9 / EMA 21</strong><span>Проверка пересечения на загруженных свечах.</span></div><div className="page-tile"><strong>RSI 14</strong><span>{rsi(marketCandles.map(c => c.close), 14)?.toFixed(1) ?? "Недостаточно данных"} · справочные уровни 30 и 70.</span></div><div className="page-tile"><strong>Данные</strong><span>{marketLive ? "Публичный API; актуальность проверяйте самостоятельно." : "Используются демонстрационные свечи."}</span></div><div className="page-tile"><strong>Ограничение</strong><span>Сигналы не учитывают комиссии, проскальзывание и ваш риск-профиль.</span></div></div></>}
-            {activeNav === "Календарь" && <><p>Часы по Москве: {clock}. Доступность ISS API сама по себе не подтверждает, что торговая сессия открыта.</p><div className="page-grid"><div className="page-tile"><strong>Валютный рынок</strong><span>{moex.ok ? "Источник ISS доступен; расписание ещё не подтверждено." : "Не удалось подтвердить статус сессии."}</span></div><div className="page-tile"><strong>Срочный рынок</strong><span>Статус не подтверждён без загрузки официального расписания.</span></div></div><div className="dialog-actions"><button className="dialog-button" onClick={() => window.open("https://www.moex.com/ru/tradingcalendar", "_blank", "noopener,noreferrer")}>Открыть официальный календарь MOEX ↗</button></div></>}
-            {activeNav === "ИИ Колобок" && <><p>{assistantText}</p><div className="page-grid"><div className="page-tile"><strong>Голосовые оповещения</strong><span>{voiceEnabled ? "Включены" : "Выключены"}</span></div><div className="page-tile"><strong>Автоматические проверки</strong><span>{autoSignals ? "Включены при обновлении свечей" : "Отключены; можно проверять вручную"}</span></div></div><div className="dialog-actions"><button className="dialog-button" onClick={toggleListening}>{listening ? "Остановить микрофон" : "Голосовая команда"}</button><button className="dialog-button secondary" onClick={runSignal}>Проверить сигнал</button></div></>}
+            {activeNav === "Торговля" && <><p>Рыночный обзор EUR/USDT. Здесь отображаются данные из подключённого источника; при отсутствии связи система сохраняет текущее состояние, а не падает.</p></>}
+            {activeNav === "Аналитика" && <><p>{signal.reason}. EMA 9/21 и RSI 14 используются как базовые фильтры для демонстрационного анализа.</p></>}
+            {activeNav === "Календарь" && <><p>Часы по Москве: {clock}. Доступность MOEX API никак не отменяет демонстрационный режим при отсутствии данных.</p></>}
+            {activeNav === "ИИ Колобок" && <><p>{assistantText}</p><div className="page-grid"><div className="page-tile"><strong>Голосовые оповещения</strong><span>{voiceEnabled ? "Включены" : "Выключены"}</span></div><div className="page-tile"><strong>Звук</strong><span>{sound.enabled ? "Включён" : "Выключен"}</span></div></div></>}
           </section>
         </div>
       )}
+
       {showSettings && (
         <div className="page-overlay" onMouseDown={e => { if (e.target === e.currentTarget) { setShowSettings(false); setActiveNav("Браузер"); } }}>
           <section className="page-dialog">
             <div className="page-dialog-head"><h2>Настройки «Колобка»</h2><button className="round-button" onClick={() => { setShowSettings(false); setActiveNav("Браузер"); }} aria-label="Закрыть"><X size={17}/></button></div>
-            <div className="setting-row"><span><strong>Голосовые уведомления</strong><br/><small className="muted">Русский синтез речи Web Speech API</small></span><input type="checkbox" checked={voiceEnabled} onChange={e => setVoiceEnabled(e.target.checked)} /></div>
-            <div className="setting-row"><span><strong>Звук о входе в сделку</strong><br/><small className="muted">Мелодичный колокольчик Web Audio при сигнале BUY/SELL</small></span><input type="checkbox" disabled={!sound.supported} checked={sound.enabled} onChange={e => { unlockAudio(); setSound(setSoundEnabled(e.target.checked)); }} /></div>
-            <div className="setting-row slider-row"><span><strong>Громкость сигнала</strong><br/><small className="muted">{sound.supported ? `${Math.round(sound.volume * 100)}%` : "Аудио недоступно в этой сборке"}</small></span>
-              <div className="volume-control">
-                <input type="range" min="0" max="1" step="0.05" value={sound.volume} disabled={!sound.supported}
-                  onChange={e => setSound(setSoundVolume(e.target.value))} />
-                <button className="dialog-button" disabled={!sound.supported} onClick={() => { unlockAudio(); playTestTone(); }}>Тест</button>
-              </div>
-            </div>
-            <div className="setting-row"><span><strong>Автоматически проверять сигналы</strong><br/><small className="muted">При обновлении набора свечей; без размещения ордеров</small></span><input type="checkbox" checked={autoSignals} onChange={e => setAutoSignals(e.target.checked)} /></div>
-            <div className="setting-row"><span><strong>Таймфрейм графика</strong><br/><small className="muted">Меняет период запрашиваемых свечей</small></span><select value={timeframe} onChange={e => setTimeframe(e.target.value)}>{intervals.map(i => <option key={i} value={i}>{i}</option>)}</select></div>
-            <p>Приложение не совершает сделки. При недоступности API оно явно помечает демонстрационные данные. Перед торговыми решениями проверяйте источник, время свечи и ликвидность инструмента.</p>
-            <div className="dialog-actions"><button className="dialog-button" onClick={() => { setShowSettings(false); setActiveNav("Браузер"); }}>Готово</button><button className="dialog-button secondary" onClick={() => { stopSpeech(); setAssistantText("Голос остановлен."); }}>Остановить голос</button></div>
+            <div className="setting-row"><span><strong>Голосовые уведомления</strong><br/><small className="muted">Русский синтез речи Web Speech API</small></span><input type="checkbox" checked={voiceEnabled} onChange={() => setVoiceEnabled(v => !v)} /></div>
+            <div className="setting-row"><span><strong>Звук о входе в сделку</strong><br/><small className="muted">Мелодичный колокольчик Web Audio при сигнале</small></span><input type="checkbox" checked={sound.enabled} onChange={() => setSound(setSoundEnabled(!sound.enabled))} /></div>
+            <div className="setting-row slider-row"><span><strong>Громкость сигнала</strong><br/><small className="muted">{sound.supported ? `${Math.round(sound.volume * 100)}%` : "Не поддерживается"}</small></span><div className="volume-control"><input type="range" min="0" max="1" step="0.05" value={sound.volume} disabled={!sound.supported} onChange={e => setSound(setSoundVolume(e.target.value))} /><button className="dialog-button" disabled={!sound.supported} onClick={() => { unlockAudio(); playTestTone(); }}>Тест</button></div></div>
+            <div className="setting-row"><span><strong>Автоматически проверять сигналы</strong><br/><small className="muted">При обновлении набора свечей</small></span><input type="checkbox" checked={autoSignals} onChange={() => setAutoSignals(v => !v)} /></div>
+            <div className="setting-row"><span><strong>Таймфрейм графика</strong><br/><small className="muted">Меняет период запрашиваемых свечей</small></span><select value={timeframe} onChange={e => setTimeframe(e.target.value)}>{intervals.map(v => <option key={v} value={v}>{v}</option>)}</select></div>
+            <p>Приложение не совершает сделки. При недоступности API оно явно помечает демонстрационные данные и продолжает работать в безопасном режиме.</p>
+            <div className="dialog-actions"><button className="dialog-button" onClick={() => { setShowSettings(false); setActiveNav("Браузер"); }}>Готово</button><button className="dialog-button secondary" onClick={() => { setShowSettings(false); setActiveNav("Браузер"); }}>Закрыть</button></div>
           </section>
         </div>
       )}
-      <footer className="statusbar"><span>Колобок <b>v1.0.0</b></span><span><span className="status-dot"/> {marketLive ? "График TradingView · сигналы по живым котировкам" : "График TradingView · источник сигналов недоступен"}</span><span>Торгуй осознанно. Слушай Колобка.</span></footer>
+      <footer className="statusbar"><span>Колобок <b>v1.0.0</b></span><span><span className="status-dot"/> {marketLive ? "График TradingView · сигналы по живым котировкам" : "График TradingView · демонстрационный режим"}</span></footer>
     </div>
   );
 }

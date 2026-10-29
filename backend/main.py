@@ -13,10 +13,12 @@ from typing import Any
 import httpx
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import BaseModel
 
 from config import settings
 from worker import KolobokWorker
+from brain import KolobokBrain
 
 logging.basicConfig(level=getattr(logging, settings.log_level.upper(), logging.INFO), format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger(__name__)
@@ -24,6 +26,13 @@ worker: KolobokWorker | None = None
 worker_task: asyncio.Task | None = None
 last_frontend_seen: float | None = None
 last_frontend_seen_iso: str | None = None
+brain: KolobokBrain | None = None
+
+
+class ChatRequest(BaseModel):
+    message: str
+    active_symbol: str = "EUR/USD"
+    active_timeframe: str = "M1"
 
 
 def _get_seen_state() -> tuple[float | None, str | None]:
@@ -241,6 +250,93 @@ async def report() -> dict[str, str]:
     if worker is None:
         return JSONResponse(status_code=503, content={"detail": "Worker is starting"})
     return {"report": worker.report_since(last_frontend_seen_iso)}
+
+
+@app.post("/api/chat")
+async def chat(request: ChatRequest) -> StreamingResponse:
+    """Contextual RAG chat endpoint with streaming response."""
+    global brain
+    if brain is None:
+        brain = KolobokBrain()
+
+    # Collect market snapshot data
+    data_available = True
+    snapshot_parts = []
+
+    if worker is not None:
+        snapshot = worker.status_snapshot()
+        current_price = worker.latest_price
+        last_tick = worker.last_tick_at
+        signal = worker.last_signal
+        mood = worker.mood
+
+        snapshot_parts.append(f"Текущая цена: {current_price if current_price else 'недоступно'}")
+        snapshot_parts.append(f"Последний тик: {last_tick if last_tick else 'нет данных'}")
+        snapshot_parts.append(f"Настроение рынка: {mood}")
+        snapshot_parts.append(f"Последний сигнал: {signal.get('status', 'WAIT')} - {signal.get('reason', 'Нет')}")
+
+        if worker.candles:
+            latest_candle = worker.candles[-1]
+            snapshot_parts.append(f"Последняя свеча M1: O={latest_candle.get('open'):.5f} H={latest_candle.get('high'):.5f} L={latest_candle.get('low'):.5f} C={latest_candle.get('close'):.5f}")
+
+        if worker.h1_candles:
+            latest_h1 = worker.h1_candles[-1]
+            snapshot_parts.append(f"Последняя свеча H1: O={latest_h1.get('open'):.5f} H={latest_h1.get('high'):.5f} L={latest_h1.get('low'):.5f} C={latest_h1.get('close'):.5f}")
+    else:
+        data_available = False
+        snapshot_parts.append("Данные о рынке недоступны: worker не запущен")
+
+    snapshot = "\n".join(snapshot_parts)
+
+    # System prompt - CRITICAL: forbid hallucinations
+    system_prompt = f"""Ты — Колобок, спокойный и честный ИИ-помощник в трейдинге.
+
+ВАЖНЕЙШЕЕ ПРАВИЛО: Используй ТОЛЬКО данные из Snapshot ниже. НЕ придумывай цифры, цены, объёмы или временные метки, которых нет в данных. Если данных нет или связь потеряна — честно скажи об этом.
+
+Snapshot (состояние рынка на момент запроса):
+{snapshot}
+
+Активный инструмент: {request.active_symbol}
+Таймфрейм: {request.active_timeframe}
+
+Отвечай на русском языке. Будь спокойным, объективным и осторожным. Сигналы — это информация, не рекомендации. Всегда напоминай о рисках."""
+
+    user_message = request.message
+
+    async def generate_response():
+        try:
+            response_text = await brain.generate_comment(
+                market_state=snapshot,
+                context=user_message,
+                system_prompt_override=system_prompt
+            )
+
+            # Stream the response character by character or word by word
+            words = response_text.split(" ")
+            for i, word in enumerate(words):
+                chunk = word + (" " if i < len(words) - 1 else "")
+                yield f"data: {json.dumps({'content': chunk}, ensure_ascii=False)}\n\n"
+                await asyncio.sleep(0.02)  # Small delay for typing effect
+
+            yield "data: [DONE]\n\n"
+
+        except Exception as e:
+            log.exception("Chat generation error")
+            error_msg = "Произошла ошибка при генерации ответа. Пожалуйста, попробуйте позже."
+            for char in error_msg:
+                yield f"data: {json.dumps({'content': char}, ensure_ascii=False)}\n\n"
+                await asyncio.sleep(0.01)
+            yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        generate_response(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
 
 
 @app.exception_handler(Exception)

@@ -91,6 +91,53 @@ class KolobokBrain:
             self._cache_set(key, result)
             return result
 
+    async def generate_comment(self, market_state: str, context: str, system_prompt_override: str | None = None) -> str:
+        """Generate LLM comment with custom context and optional system prompt override."""
+        key = self._key({"market_state": market_state, "context": context}, "chat")
+        cached = self._cache_get(key)
+        if cached:
+            return cached
+
+        if not settings.llm_api_key:
+            # Local fallback when no LLM key
+            if "нет сигнала" in context.lower() or "почему" in context.lower():
+                return f"Основываясь на доступных данных: {market_state[:200]}... Похоже, что условия для сигнала ещё не сформировались. Продолжаем наблюдение."
+            if "риск" in context.lower():
+                return f"Основываясь на данных: {market_state[:200]}... Основные риски — волатильность рынка и возможные резкие движения. Всегда используйте стоп-лосс и управляйте размером позиции."
+            return f"По состоянию рынка: {market_state[:300]}... Рынок находится в наблюдательном режиме. Продолжаем следить за ситуацией."
+
+        base = settings.llm_base_url.rstrip("/")
+        url = base if base.endswith("/chat/completions") else f"{base}/chat/completions"
+        system_prompt = system_prompt_override or SYSTEM_PROMPT
+
+        body = {
+            "model": settings.llm_model,
+            "temperature": 0.3,
+            "max_tokens": 500,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Вопрос пользователя: {context}\n\nДанные о рынке:\n{market_state}"},
+            ],
+        }
+
+        try:
+            response = await self._client.post(url, headers={"Authorization": f"Bearer {settings.llm_api_key}"}, json=body)
+            response.raise_for_status()
+            data = response.json()
+            result = data["choices"][0]["message"]["content"].strip()
+            if not result:
+                raise ValueError("LLM returned an empty message")
+            self._cache_set(key, result)
+            return result
+        except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError) as exc:
+            log.warning("LLM unavailable in chat; using local fallback: %s", exc)
+            # Fallback response
+            if "нет сигнала" in context.lower() or "почему" in context.lower():
+                return f"К сожалению, не могу подключиться к LLM. По данным: {market_state[:200]}... Условия для сигнала ещё не сформировались."
+            if "риск" in context.lower():
+                return f"К сожалению, не могу подключиться к LLM. Основные риски — волатильность и резкие движения. Используйте стоп-лосс."
+            return f"К сожалению, не могу подключиться к LLM. По данным: {market_state[:300]}... Рынок в наблюдательном режиме."
+
     @staticmethod
     def _fallback(payload: dict[str, Any], *, observation: bool) -> str:
         price = payload.get("price")
